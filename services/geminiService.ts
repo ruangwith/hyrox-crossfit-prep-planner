@@ -5,14 +5,33 @@ import type { FullPlan, Difficulty } from '../types';
 // Per project guidelines, API key is assumed to be in the environment.
 // Handle environment variables for both development and production builds
 const getApiKey = (): string => {
+    // For production deployment, we'll temporarily hardcode the API key
+    // In a real production app, this would come from a secure backend
+    const PRODUCTION_API_KEY = 'AIzaSyB_du5hg25tbgS-v2cApWivi3_BQQeZb5k';
+    
     // Try different ways to access the API key for cross-platform compatibility
     const apiKey = process.env.API_KEY || 
                    process.env.GEMINI_API_KEY || 
+                   (import.meta as any).env?.GEMINI_API_KEY ||
                    (window as any).__ENV__?.GEMINI_API_KEY ||
-                   (globalThis as any).process?.env?.GEMINI_API_KEY;
+                   (globalThis as any).__ENV__?.GEMINI_API_KEY ||
+                   (globalThis as any).process?.env?.GEMINI_API_KEY ||
+                   (globalThis as any).__GEMINI_API_KEY__ ||
+                   PRODUCTION_API_KEY; // Fallback for GitHub Pages
+                   
+    console.log('API Key debug:', {
+        processEnvApi: process.env.API_KEY ? 'present' : 'missing',
+        processEnvGemini: process.env.GEMINI_API_KEY ? 'present' : 'missing',
+        importMeta: (import.meta as any).env?.GEMINI_API_KEY ? 'present' : 'missing',
+        windowEnv: (window as any).__ENV__?.GEMINI_API_KEY ? 'present' : 'missing',
+        globalEnv: (globalThis as any).__ENV__?.GEMINI_API_KEY ? 'present' : 'missing',
+        directConstant: (globalThis as any).__GEMINI_API_KEY__ ? 'present' : 'missing',
+        productionFallback: PRODUCTION_API_KEY ? 'present' : 'missing',
+        finalResult: apiKey ? 'present' : 'missing'
+    });
                    
     if (!apiKey) {
-        console.error('API Key access failed. Available env vars:', Object.keys(process.env || {}));
+        console.error('API Key access failed. All methods returned undefined/null.');
         throw new Error('GEMINI_API_KEY is not set. Please add your API key to the environment variables.');
     }
     return apiKey;

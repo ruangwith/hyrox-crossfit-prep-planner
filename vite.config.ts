@@ -16,9 +16,12 @@ export default defineConfig(({ mode }) => {
         // Multiple ways to inject the API key for cross-platform compatibility
         'process.env.API_KEY': JSON.stringify(apiKey),
         'process.env.GEMINI_API_KEY': JSON.stringify(apiKey),
+        'import.meta.env.GEMINI_API_KEY': JSON.stringify(apiKey),
         'globalThis.__ENV__': JSON.stringify({ GEMINI_API_KEY: apiKey }),
         // Fallback for mobile browsers
-        '__ENV__': JSON.stringify({ GEMINI_API_KEY: apiKey })
+        '__ENV__': JSON.stringify({ GEMINI_API_KEY: apiKey }),
+        // Direct constant injection
+        '__GEMINI_API_KEY__': JSON.stringify(apiKey)
       },
       resolve: {
         alias: {
@@ -38,7 +41,6 @@ export default defineConfig(({ mode }) => {
       },
       // Enable HTTPS for development testing on mobile
       server: {
-        https: false,
         host: true, // Expose to network for mobile testing
         port: 5173
       }
