@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mobile API Test</title>
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            max-width: 600px; 
+            margin: 0 auto; 
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .test-result { 
+            background: white; 
+            padding: 15px; 
+            margin: 10px 0; 
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .status-ok { border-left: 4px solid #4CAF50; }
+        .status-error { border-left: 4px solid #F44336; }
+        .status-warning { border-left: 4px solid #FF9800; }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            font-size: 16px;
+            cursor: pointer;
+            width: 100%;
+            margin: 10px 0;
+        }
+        button:disabled { background: #ccc; }
+    </style>
+</head>
+<body>
+    <h1>Mobile API Diagnostics</h1>
+    
+    <div id="diagnostics"></div>
+    
+    <script>
+        function runDiagnostics() {
+            const diagnostics = document.getElementById('diagnostics');
+            diagnostics.innerHTML = '';
+            
+            // Test 1: Environment Variables
+            const apiKey = process.env.API_KEY || process.env.GEMINI_API_KEY || window.__ENV__?.GEMINI_API_KEY;
+            addResult('Environment Variables', 
+                apiKey ? 'API Key found' : 'API Key missing', 
+                apiKey ? 'ok' : 'error'
+            );
+            
+            // Test 2: Network Connection
+            addResult('Network Status', 
+                navigator.onLine ? 'Online' : 'Offline',
+                navigator.onLine ? 'ok' : 'error'
+            );
+            
+            // Test 3: Connection Quality
+            const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+            if (connection) {
+                addResult('Connection Type', 
+                    `${connection.effectiveType || 'Unknown'} (${connection.downlink || 'Unknown'}Mbps)`,
+                    connection.effectiveType === 'slow-2g' ? 'warning' : 'ok'
+                );
+            } else {
+                addResult('Connection Type', 'API not supported', 'warning');
+            }
+            
+            // Test 4: Browser Info
+            addResult('Browser', navigator.userAgent.includes('Mobile') ? 'Mobile Browser' : 'Desktop Browser', 'ok');
+            
+            // Test 5: Available APIs
+            const apis = [];
+            if (typeof fetch !== 'undefined') apis.push('Fetch');
+            if (typeof Promise !== 'undefined') apis.push('Promises');
+            if (typeof JSON !== 'undefined') apis.push('JSON');
+            addResult('Browser APIs', apis.join(', '), apis.length >= 3 ? 'ok' : 'warning');
+            
+            console.log('Environment debug:', {
+                processEnv: typeof process !== 'undefined' ? Object.keys(process.env || {}) : 'undefined',
+                windowEnv: typeof window !== 'undefined' ? window.__ENV__ : 'undefined',
+                globalEnv: typeof globalThis !== 'undefined' ? globalThis.__ENV__ : 'undefined',
+                apiKey: apiKey ? 'present' : 'missing'
+            });
+        }
+        
+        function addResult(test, result, status) {
+            const div = document.createElement('div');
+            div.className = `test-result status-${status}`;
+            div.innerHTML = `<strong>${test}:</strong> ${result}`;
+            document.getElementById('diagnostics').appendChild(div);
+        }
+        
+        // Run diagnostics on load
+        runDiagnostics();
+    </script>
+</body>
+</html>

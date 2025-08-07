@@ -3,11 +3,22 @@ import { GoogleGenAI, Type } from "@google/genai";
 import type { FullPlan, Difficulty } from '../types';
 
 // Per project guidelines, API key is assumed to be in the environment.
-const apiKey = process.env.API_KEY || process.env.GEMINI_API_KEY;
-if (!apiKey) {
-    throw new Error('GEMINI_API_KEY is not set. Please add your API key to the environment variables.');
-}
-const ai = new GoogleGenAI({ apiKey });
+// Handle environment variables for both development and production builds
+const getApiKey = (): string => {
+    // Try different ways to access the API key for cross-platform compatibility
+    const apiKey = process.env.API_KEY || 
+                   process.env.GEMINI_API_KEY || 
+                   (window as any).__ENV__?.GEMINI_API_KEY ||
+                   (globalThis as any).process?.env?.GEMINI_API_KEY;
+                   
+    if (!apiKey) {
+        console.error('API Key access failed. Available env vars:', Object.keys(process.env || {}));
+        throw new Error('GEMINI_API_KEY is not set. Please add your API key to the environment variables.');
+    }
+    return apiKey;
+};
+
+const ai = new GoogleGenAI({ apiKey: getApiKey() });
 
 const responseSchema = {
     type: Type.OBJECT,
@@ -104,45 +115,112 @@ const createPrompt = (difficulty: Difficulty): string => {
     `;
 };
 
+// Create a timeout promise for mobile network reliability
+const createTimeoutPromise = (timeoutMs: number) => {
+    return new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('Request timeout - mobile connection may be slow')), timeoutMs);
+    });
+};
+
+// Retry logic for mobile network issues
+const retryWithBackoff = async <T>(
+    operation: () => Promise<T>,
+    maxRetries: number = 3,
+    baseDelay: number = 1000
+): Promise<T> => {
+    let lastError: Error;
+    
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+        try {
+            return await operation();
+        } catch (error) {
+            lastError = error as Error;
+            console.warn(`Attempt ${attempt + 1} failed:`, error);
+            
+            if (attempt < maxRetries - 1) {
+                const delay = baseDelay * Math.pow(2, attempt);
+                console.log(`Retrying in ${delay}ms...`);
+                await new Promise(resolve => setTimeout(resolve, delay));
+            }
+        }
+    }
+    
+    throw lastError!;
+};
+
 export const generateWorkoutPlan = async (difficulty: Difficulty): Promise<Omit<FullPlan, 'id' | 'difficulty'>> => {
     let responseText = '';
+    
+    const performRequest = async (): Promise<Omit<FullPlan, 'id' | 'difficulty'>> => {
+        try {
+            const prompt = createPrompt(difficulty);
+
+            // Create the API request with timeout handling for mobile
+            const apiCall = ai.models.generateContent({
+                model: 'gemini-2.5-flash',
+                contents: prompt,
+                config: {
+                    responseMimeType: 'application/json',
+                    responseSchema: responseSchema,
+                    temperature: 0.8,
+                },
+            });
+
+            // Race between API call and timeout (30 seconds for mobile)
+            const response = await Promise.race([
+                apiCall,
+                createTimeoutPromise(30000)
+            ]);
+
+            responseText = (response as any).text;
+            
+            // The AI can sometimes wrap the JSON in markdown code blocks. Clean it up.
+            const cleanedText = responseText.replace(/^```json\s*/, '').replace(/```$/, '').trim();
+            
+            if (!cleanedText) {
+                throw new Error("The AI returned an empty response.");
+            }
+
+            const parsedPlan: Omit<FullPlan, 'id' | 'difficulty'> = JSON.parse(cleanedText);
+            
+            if (!parsedPlan.weeklyPlan || parsedPlan.weeklyPlan.length !== 4) {
+                console.error("Invalid plan structure received from AI:", parsedPlan);
+                throw new Error("Invalid plan structure received from AI.");
+            }
+
+            return parsedPlan;
+
+        } catch (error) {
+            console.error("Error in API call:", error);
+            
+            // Enhanced error handling for mobile debugging
+            if (error instanceof SyntaxError) {
+                console.error("Failed to parse JSON. Raw response from AI:", responseText);
+                throw new Error("The AI returned a response in an unexpected format. Please try again.");
+            }
+            
+            // Specific handling for different error types
+            if ((error as Error).message.includes('timeout')) {
+                throw new Error("Network timeout - please check your internet connection and try again.");
+            }
+            
+            if ((error as Error).message.includes('API key')) {
+                throw new Error("API configuration error. Please contact support if this persists.");
+            }
+            
+            if ((error as Error).message.includes('fetch')) {
+                throw new Error("Network error - please check your internet connection and try again.");
+            }
+            
+            throw new Error(`API request failed: ${(error as Error).message}`);
+        }
+    };
+
+    // Use retry logic with backoff for mobile reliability
     try {
-        const prompt = createPrompt(difficulty);
-
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: prompt,
-            config: {
-                responseMimeType: 'application/json',
-                responseSchema: responseSchema,
-                temperature: 0.8,
-            },
-        });
-
-        responseText = response.text;
-        
-        // The AI can sometimes wrap the JSON in markdown code blocks. Clean it up.
-        const cleanedText = responseText.replace(/^```json\s*/, '').replace(/```$/, '').trim();
-        
-        if (!cleanedText) {
-            throw new Error("The AI returned an empty response.");
-        }
-
-        const parsedPlan: Omit<FullPlan, 'id' | 'difficulty'> = JSON.parse(cleanedText);
-        
-        if (!parsedPlan.weeklyPlan || parsedPlan.weeklyPlan.length !== 4) {
-            console.error("Invalid plan structure received from AI:", parsedPlan);
-            throw new Error("Invalid plan structure received from AI.");
-        }
-
-        return parsedPlan;
-
+        return await retryWithBackoff(performRequest, 2, 2000);
     } catch (error) {
-        console.error("Error generating workout plan:", error);
-        if (error instanceof SyntaxError) {
-            console.error("Failed to parse JSON. Raw response from AI:", responseText);
-            throw new Error("The AI returned a response in an unexpected format. Please try again.");
-        }
-        throw new Error("The AI service might be busy. Please try again in a moment.");
+        console.error("Final error after retries:", error);
+        throw error;
     }
 };
