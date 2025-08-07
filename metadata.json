@@ -1,0 +1,6 @@
+{
+  "name": "Hyrox & CrossFit Prep Planner",
+  "description": "An AI-powered 4-week fitness planner for intermediate athletes. Generates tailored Push/Pull/Leg, HIIT, and endurance workouts using home gym equipment to prepare for events like CrossFit and Hyrox.",
+  "requestFramePermissions": [],
+  "prompt": ""
+}
